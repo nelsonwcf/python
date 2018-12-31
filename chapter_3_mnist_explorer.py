@@ -108,3 +108,29 @@ y_pred_forest = y_scores_forest > 0.5
 precision_forest = precision_score(y_train_5, y_pred_forest) 
 recall_forest = recall_score(y_train_5, y_pred_forest) 
 f1_forest = f1_score(y_train_5, y_pred_forest)
+
+# MULTICLASS Classification
+# using regular classifiers (which use OvO or OvR strategies)
+sgd_clf.fit(X_train, y_train)
+some_digit_scores = sgd_clf.decision_function(X[1000].reshape(1,-1)) # using a 0 as example
+np.argmax(some_digit_scores) # returns the index of the element with maximum value
+sgd_clf.classes_ # compare it to the classes
+
+# force classifiers to use OvO or OvR
+from sklearn.multiclass import OneVsOneClassifier
+ovo_clf = OneVsOneClassifier(SGDClassifier(random_state=42))
+ovo_clf.fit(X_train, y_train)
+ovo_clf.predict(X[1000].reshape(1,-1))
+len(ovo_clf.estimators_) # get how many classifiers were trained
+
+# Using RandomForests, which is already a multiclass classifier natively
+forest_clf.fit(X_train, y_train)
+forest_clf.predict(X[1000].reshape(1,-1))
+forest_clf.predict_proba(X[1000].reshape(1,-1))
+forest_clf.classes_
+
+# Improving results using a Scaler (why does it work since they are images)
+from sklearn.preprocessing import StandardScaler
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train.astype(np.float64))
+cross_val_score(sgd_clf, X_train_scaled, y_train, cv = 5, scoring = "accuracy") # Note: doesn't seem to affect forest_clf
