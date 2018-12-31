@@ -68,19 +68,23 @@ print(confusion_matrix(y_train_5, y_pred))
 
 # getting precision and recall
 from sklearn.metrics import precision_score, recall_score, f1_score
-precision = precision_score(y_train_5, y_pred) # of the detected, how many were correctly classified
-recall = recall_score(y_train_5, y_pred) # how many of the correct ones were detected
+precision = precision_score(y_train_5, y_pred) # how many correctly classified
+recall = recall_score(y_train_5, y_pred) # how many positives were detected
 f1 = f1_score(y_train_5, y_pred)
 
 # getting threshold from clasifier instead of the prediction
-print(sgd_clf.decision_function(X[10000].reshape(1,-1))) # get score instead of classification
+print(sgd_clf.decision_function(X[10000].reshape(1,-1))) # get score for class
 
 # customizing threshold to tune recall and precison
 from sklearn.metrics import precision_recall_curve
-y_scores = cross_val_predict(sgd_clf, X_train, y_train_5, method="decision_function")
+y_scores = cross_val_predict(sgd_clf,
+                             X_train,
+                             y_train_5,
+                             method="decision_function")
 precisions, recalls, thresholds = precision_recall_curve(y_train_5, y_scores)
 y_train_5_ht = y_scores > -200000
-print(precision_score(y_train_5, y_train_5_ht),recall_score(y_train_5, y_train_5_ht))
+print(precision_score(y_train_5, y_train_5_ht),
+      recall_score(y_train_5, y_train_5_ht))
 
 # ROC curve
 from sklearn.metrics import roc_curve, roc_auc_score
@@ -91,9 +95,14 @@ print(roc_auc_score(y_train_5, y_scores))
 # Comparison between SGD and RandomForest classifiers using ROC metrics
 from sklearn.ensemble import RandomForestClassifier
 forest_clf = RandomForestClassifier(random_state=42)
-y_probas_forest = cross_val_predict(forest_clf, X_train, y_train_5, cv = 3, method="predict_proba")
+y_probas_forest = cross_val_predict(forest_clf,
+                                    X_train,
+                                    y_train_5, 
+                                    cv = 3,
+                                    method="predict_proba")
 y_scores_forest = y_probas_forest[:,1] # get the positive class probability
-fpr_forest, tpr_forest, thresholds_forest = roc_curve(y_train_5, y_scores_forest)
+fpr_forest, tpr_forest, thresholds_forest = roc_curve(y_train_5,
+                                                      y_scores_forest)
 
 # plot comparison between SGD and RandomForests
 plt.plot(fpr,tpr,"b:",label="SGD")
@@ -101,7 +110,8 @@ plot_roc_curve(fpr_forest, tpr_forest, "Random Forest")
 plt.legend(loc="lower right")
 plt.show()
 
-print(roc_auc_score(y_train_5, y_scores), roc_auc_score(y_train_5, y_scores_forest))
+print(roc_auc_score(y_train_5, y_scores),
+      roc_auc_score(y_train_5, y_scores_forest))
 
 # checking recall and scores of the new model
 y_pred_forest = y_scores_forest > 0.5
@@ -112,8 +122,8 @@ f1_forest = f1_score(y_train_5, y_pred_forest)
 # MULTICLASS Classification
 # using regular classifiers (which use OvO or OvR strategies)
 sgd_clf.fit(X_train, y_train)
-some_digit_scores = sgd_clf.decision_function(X[1000].reshape(1,-1)) # using a 0 as example
-np.argmax(some_digit_scores) # returns the index of the element with maximum value
+some_digit_scores = sgd_clf.decision_function(X[1000].reshape(1,-1)) # '0'
+np.argmax(some_digit_scores) # returns the index with max element
 sgd_clf.classes_ # compare it to the classes
 
 # force classifiers to use OvO or OvR
@@ -133,4 +143,4 @@ forest_clf.classes_
 from sklearn.preprocessing import StandardScaler
 scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train.astype(np.float64))
-cross_val_score(sgd_clf, X_train_scaled, y_train, cv = 5, scoring = "accuracy") # Note: doesn't seem to affect forest_clf
+cross_val_score(sgd_clf, X_train_scaled, y_train, cv = 5, scoring = "accuracy")
