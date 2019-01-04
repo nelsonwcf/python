@@ -6,11 +6,13 @@ import os
 import tarfile
 import hashlib
 import pandas as pd
+from pandas.plotting import scatter_matrix
 import numpy as np
 import matplotlib.pyplot as plt
 from six.moves import urllib
 from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
-from pandas.tools.plotting import scatter_matrix
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder, LabelBinarizer
 
 ssl._create_default_https_context = ssl._create_unverified_context
 
@@ -42,14 +44,14 @@ def split_train_test(data, test_ratio, seed=42):
     train_indices = shuffled_indices[test_set_size:]
     return data.iloc[train_indices], data.iloc[test_indices]
 
-def test_set_check(identifier, test_ratio, hash):
+def test_set_check(identifier, test_ratio, hash_):
     """Check if the current identifier is in the test or the train set"""
-    return hash(np.int64(identifier)).digest()[-1] < 256 * test_ratio
+    return hash_(np.int64(identifier)).digest()[-1] < 256 * test_ratio
 
-def split_train_test_by_id(data, test_ratio, id_column, hash=hashlib.md5):
+def split_train_test_by_id(data, test_ratio, id_column, hash_=hashlib.md5):
     """Split using the hashing and some identifier"""
     ids = data[id_column]
-    in_test_set = ids.apply(lambda id_: test_set_check(id_, test_ratio, hash))
+    in_test_set = ids.apply(lambda id_: test_set_check(id_, test_ratio, hash_))
     return data.loc[~in_test_set], data.loc[in_test_set]
 
 fetch_housing_data()
@@ -97,8 +99,8 @@ print(strat_train_set["income_cat"].value_counts()/len(strat_train_set))
 print(strat_test_set["income_cat"].value_counts()/len(strat_test_set))
 
 ## Removing the strata category from the data
-for set in (strat_train_set, strat_test_set):
-    set.drop(["income_cat"],axis=1, inplace=True)
+for set_ in (strat_train_set, strat_test_set):
+    set_.drop(["income_cat"], axis=1, inplace=True)
 
 ## with the sets created, replace original hosing with train set
 housing = strat_train_set.copy()
@@ -121,11 +123,17 @@ corr_matrix = housing.corr()
 print(corr_matrix["median_house_value"].sort_values(ascending=False))
 
 ## plotting the SPLOM with pandas
-attributes = ["median_house_value","median_income","total_rooms","housing_median_age"]
-scatter_matrix(housing[attributes],figsize=(12,8))
+attributes = ["median_house_value",
+              "median_income",
+              "total_rooms",
+              "housing_median_age"]
+scatter_matrix(housing[attributes], figsize=(12, 8))
 
 # scatterplot using pandas again
-housing.plot(kind="scatter", x="median_income", y="median_house_value",alpha=0.1)
+housing.plot(kind="scatter",
+             x="median_income",
+             y="median_house_value",
+             alpha=0.1)
 
 # adding some attribute combinations
 housing["rooms_per_household"] = housing["total_rooms"]/housing["households"]
@@ -141,10 +149,42 @@ attributes = ["median_house_value",
               "population_per_household",
               "bedrooms_per_room",
               "rooms_per_household"]
-scatter_matrix(housing[attributes],figsize=(12,8))
+scatter_matrix(housing[attributes], figsize=(12, 8))
 
-## Restoring data to initial state
-housing = strat_train_set.drop("median_house_value", axis = 1)
+## Restore data and separate labels from regressors
+housing = strat_train_set.drop("median_house_value", axis=1)
 housing_labels = strat_train_set["median_house_value"].copy() # copy not point
 
 ## Data Cleaning using Scikit tools
+# housing.dropna(subset=["total_bedrooms"]) # drop rows based on N/As on column
+# housing.drop("total_bedrooms", axis = 1) # drop the entire column
+median = housing["total_bedrooms"].median()
+housing["total_bedrooms"].fillna(median)
+
+## Creating and training an SimpleInputer
+imputer = SimpleImputer(strategy="median")
+housing_num = housing.drop("ocean_proximity", axis=1)
+imputer.fit(housing_num)
+print(imputer.statistics_, "\n", housing_num.median().values)
+
+## Replacing all the values using the SimpleImputer
+X = imputer.transform(housing_num)
+
+## Converting it back to pandas DataFrame
+housing_tr = pd.DataFrame(X, columns=housing_num.columns)
+
+## Handling Text and Categorical Variables
+encoder = LabelEncoder()
+housing_cat = housing["ocean_proximity"]
+housing_cat_encoded = encoder.fit_transform(housing_cat)
+print(housing_cat_encoded)
+print(encoder.classes_)
+
+## Alternative: convert to binary variables
+encoder = OneHotEncoder()
+housing_cat_1hot = encoder.fit_transform(housing_cat_encoded.reshape(-1, 1))
+print(housing_cat_1hot)
+
+encoder = LabelBinarizer(sparse_output=True) # default is dense matrix
+housing_cat_1hot = encoder.fit_transform(housing_cat)
+print(housing_cat_1hot)
