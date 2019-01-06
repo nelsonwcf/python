@@ -21,7 +21,8 @@ from sklearn.compose import ColumnTransformer
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error
 from sklearn.tree import DecisionTreeRegressor
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import GridSearchCV
 
 ssl._create_default_https_context = ssl._create_unverified_context
 
@@ -205,19 +206,22 @@ rooms_ix, bedrooms_ix, population_ix, household_ix = 3, 4, 5, 6
 rooms_ix, bedrooms_ix, population_ix, household_ix = 3, 4, 5, 6
 
 class CombinedAttributesAdder(BaseEstimator, TransformerMixin):
-    def __init__(self, add_bedrooms_per_room = True): # no *args or **kargs
+    """Helper Class"""
+    def __init__(self, add_bedrooms_per_room=True): # no *args or **kargs
+        """Constructor"""
         self.add_bedrooms_per_room = add_bedrooms_per_room
     def fit(self, X, y=None):
+        """Trivial fit"""
         return self  # nothing else to do
     def transform(self, X, y=None):
+        """Combine attributes"""
         rooms_per_household = X[:, rooms_ix] / X[:, household_ix]
         population_per_household = X[:, population_ix] / X[:, household_ix]
         if self.add_bedrooms_per_room:
             bedrooms_per_room = X[:, bedrooms_ix] / X[:, rooms_ix]
             return np.c_[X, rooms_per_household, population_per_household,
                          bedrooms_per_room]
-        else:
-            return np.c_[X, rooms_per_household, population_per_household]
+        return np.c_[X, rooms_per_household, population_per_household]
 
 attr_adder = CombinedAttributesAdder(add_bedrooms_per_room=False)
 housing_extra_attribs = attr_adder.transform(housing.values)
@@ -241,7 +245,7 @@ num_pipeline = Pipeline([
     ])
 
 housing_num_tr = num_pipeline.fit_transform(housing_num)
-    
+
 num_attribs = list(housing_num)
 cat_attribs = ["ocean_proximity"]
 
@@ -253,11 +257,15 @@ full_pipeline = ColumnTransformer([
 housing_prepared = full_pipeline.fit_transform(housing)
 
 class OldDataFrameSelector(BaseEstimator, TransformerMixin):
+    """For Compatibility"""
     def __init__(self, attribute_names):
+        """Constructor"""
         self.attribute_names = attribute_names
     def fit(self, X, y=None):
+        """Trivial fit"""
         return self
     def transform(self, X):
+        """Trivial transform"""
         return X[self.attribute_names].values
 
 num_attribs = list(housing_num)
@@ -274,14 +282,14 @@ old_cat_pipeline = Pipeline([
         ('selector', OldDataFrameSelector(cat_attribs)),
         ('cat_encoder', OneHotEncoder(sparse=False)),
     ])
-                
+
 old_full_pipeline = FeatureUnion(transformer_list=[
         ("num_pipeline", old_num_pipeline),
         ("cat_pipeline", old_cat_pipeline),
     ])
-                
+
 old_housing_prepared = old_full_pipeline.fit_transform(housing)
-old_housing_prepared
+print(old_housing_prepared)
 np.allclose(housing_prepared, old_housing_prepared)
 
 ## using a simple Linear Regression with scikit
@@ -311,24 +319,24 @@ print(tree_mse)
 ## K-FOLD cross-validation
 def display_scores(scores):
     print("Scores:", scores.round(0))
-    print("Mean:", round(scores.mean(),0))
-    print("Standard deviation:", round(scores.std(),0))
+    print("Mean:", round(scores.mean(), 0))
+    print("Standard deviation:", round(scores.std(), 0))
 
-# using decision tree
+## using decision tree
 scores = cross_val_score(tree_reg, housing_prepared, housing_labels,
                          scoring="neg_mean_squared_error",
                          cv=10)
 rmse_scores = np.sqrt(-scores)
 display_scores(rmse_scores)
 
-# using linear regression
+## using linear regression
 lin_scores = cross_val_score(lin_reg, housing_prepared, housing_labels,
                              scoring="neg_mean_squared_error", cv=10)
 lin_rmse_scores = np.sqrt(-lin_scores)
 display_scores(lin_rmse_scores)
 
-# using random forest regressor
-forest_reg = RandomForestClassifier()
+## using random forest regressor
+forest_reg = RandomForestRegressor(max_features=6, n_estimators=30)
 forest_reg.fit(housing_prepared, housing_labels)
 housing_predictions = forest_reg.predict(housing_prepared)
 forest_mse = mean_squared_error(housing_labels, housing_predictions)
@@ -336,6 +344,44 @@ forest_rmse = np.sqrt(forest_mse)
 print(forest_rmse)
 
 forest_scores = cross_val_score(forest_reg, housing_prepared, housing_labels,
-                             scoring="neg_mean_squared_error", cv=3)
+                                scoring="neg_mean_squared_error", cv=10)
 forest_rmse_scores = np.sqrt(-forest_scores)
 display_scores(forest_rmse_scores)
+
+## Doing Grid-Search with Sci-Kit
+param_grid = [{'n_estimators': [3, 10, 30], 'max_features': [2, 4, 6, 8]},
+              {'bootstrap':[False], 'n_estimators':[3, 10],
+               'max_features': [2, 3, 4]},
+              ]
+grid_search = GridSearchCV(forest_reg,
+                           param_grid,
+                           cv=5,
+                           scoring='neg_mean_squared_error',
+                           refit=True)
+grid_search.fit(housing_prepared, housing_labels)
+forest_reg = grid_search.best_estimator_
+cvres = grid_search.cv_results_
+
+## Grid-search scores - alternative is to use RandomizedSearchCV instead
+for mean_score, params in zip(cvres["mean_test_score"], cvres["params"]):
+    print(np.sqrt(-mean_score), params)
+
+## Comparing importance of features
+feature_importances = grid_search.best_estimator_.feature_importances_
+extra_attribs = ["rooms_per_hhold", "pop_per_hhold", "bedrooms_per_room"]
+cat_one_hot_attribs = list(encoder.classes_)
+attributes = num_attribs + extra_attribs + cat_one_hot_attribs
+sorted(zip(feature_importances, attributes), reverse=True)
+
+## Test set evaluation
+final_model = grid_search.best_estimator_
+
+X_test = strat_test_set.drop("median_house_value", axis=1)
+y_test = strat_test_set["median_house_value"].copy()
+
+X_test_prepared = full_pipeline.transform(X_test)
+final_predictions = final_model.predict(X_test_prepared)
+
+final_mse = mean_squared_error(y_test, final_predictions)
+final_rmse = np.sqrt(final_mse)
+print(final_rmse)
